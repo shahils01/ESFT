@@ -8,9 +8,9 @@ python eval_multigpu.py \
     --output_path=results/completions/token/intent.jsonl \
     --max_new_tokens=512 \
     --eval_batch_size=2 \
-    --world_size=4 \
+    --world_size=8 \
     --openai_api_key=REPLACE_WITH_YOUR_KEY \
-    --gpus_per_rank=2
+    --gpus_per_rank=1
 
 
 # below script is used for single-gpu training and has been deprecated. If you have only one gpu, you can set above world_size=1 and gpus_per_rank=1

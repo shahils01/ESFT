@@ -100,9 +100,10 @@ def main():
         return {"input_ids": input_ids, "labels": labels}
 
 
-    model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16,
-                                                  ep_size=ep_size, attn_implementation="flash_attention_2")
+    # model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, ep_size=ep_size, attn_implementation="flash_attention_2")
+    model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, ep_size=ep_size, attn_implementation="eager", ignore_mismatched_sizes=True)
     model._ddp_params_and_buffers_to_ignore = [n for n, _ in model.named_parameters() if ".expert" in n]    # we manage grad synchronization of expert parameters
+
     to_esft(model, expert_config)
     model.dummy = torch.nn.Parameter(torch.zeros(1, dtype=model.dtype))    # prevent DDP from having no trainable parameters
     model._keys_to_ignore_on_save = ["dummy"]

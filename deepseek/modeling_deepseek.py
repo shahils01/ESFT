@@ -459,6 +459,7 @@ class MoEGate(nn.Module):
                 f"insupportable scoring function for MoE gating: {self.scoring_func}"
             )
 
+        print("self.topk_method = ", self.topk_method)
         ### select top-k experts
         if self.topk_method == "greedy":
             topk_weight, topk_idx = torch.topk(
@@ -599,14 +600,20 @@ class DeepseekV2MoE(nn.Module):
         identity = hidden_states
         orig_shape = hidden_states.shape
         topk_idx, topk_weight, aux_loss = self.gate(hidden_states)
+        print('topk_idx = ', topk_idx)
+        print('topk_weight = ', topk_weight)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        print('hidden_states shape = ', hidden_states.shape)
         flat_topk_idx = topk_idx.view(-1)
         if self.ep_size == 1:
+            print("ep_size = 1")
             hidden_states = hidden_states.repeat_interleave(self.num_experts_per_tok, dim=0)
+            print('hiddent_states ep_1 size = ', hidden_states.shape)
             y = torch.empty_like(hidden_states)
             for i, expert in enumerate(self.experts):
                 y[flat_topk_idx == i] = expert(hidden_states[flat_topk_idx == i])
         else:
+            print("ep_size > 1")
             y = self.moe_ep(hidden_states, topk_idx)
         y = (y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)).sum(dim=1)
         y = y.to(hidden_states.dtype).view(*orig_shape)
@@ -1199,6 +1206,9 @@ class DeepseekV2DecoderLayer(nn.Module):
         self.self_attn = ATTENTION_CLASSES[config._attn_implementation](
             config=config, layer_idx=layer_idx
         )
+
+        # config.n_routed_experts = 32
+        print('config.n_routed_experts = ', config.n_routed_experts)
 
         self.mlp = (
             DeepseekV2MoE(config)

@@ -43,7 +43,7 @@ def main():
         wandb.login(key=args.wandb_api_key)
 
     # Prepare data
-    tokenizer =  AutoTokenizer.from_pretrained(base_model_path)
+    tokenizer =  AutoTokenizer.from_pretrained(base_model_path, ignore_mismatched_sizes=True)
     samples = [json.loads(i) for i in open(f"datasets/train/{args.train_dataset}.jsonl").readlines()]
     buffer = []
     for instance in samples:
@@ -90,7 +90,8 @@ def main():
         return {"input_ids": input_ids, "labels": labels}
 
 
-    model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+    # model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+    model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, attn_implementation="eager", ignore_mismatched_sizes=True)
     to_esft(model, expert_config)
 
     # Initialize Trainer
