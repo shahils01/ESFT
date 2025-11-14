@@ -15,6 +15,8 @@ from esft import to_esft
 from deepseek.modeling_deepseek import DeepseekV2ForCausalLM
 import time
 
+from pathlib import Path
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["NCCL_AVOID_RECORD_STREAMS"] = "1"
 logging.set_verbosity_error()
@@ -34,7 +36,11 @@ def main():
 
     expert_config = json.load(open(args.expert_config))
     output_dir = args.output_dir
+
     base_model_path = args.base_model_path
+    # ckpt = Path(args.base_model_path).expanduser().resolve()
+    # assert ckpt.is_dir(), f"Checkpoint dir not found: {ckpt}"
+
     config = yaml.safe_load(open(args.train_config))
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -53,6 +59,8 @@ def main():
 
     # Prepare data
     tokenizer = AutoTokenizer.from_pretrained(base_model_path)
+    # tokenizer = AutoTokenizer.from_pretrained(ckpt, local_files_only=True)
+
     samples = [json.loads(i) for i in open(f"datasets/train/{args.train_dataset}.jsonl").readlines()]
     buffer = []
     for instance in samples:
@@ -102,11 +110,31 @@ def main():
 
     # model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, ep_size=ep_size, attn_implementation="flash_attention_2")
     model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, ep_size=ep_size, attn_implementation="eager", ignore_mismatched_sizes=True)
+
+    ckpt_path = "/scratch/shahils/ESFT/results/checkpoints/test/eval_intent/checkpoint-700"
+    ckpt_model = DeepseekV2ForCausalLM.from_pretrained(
+        ckpt_path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        ep_size=ep_size,
+        attn_implementation="eager",
+    )
+
+    base_state = model.state_dict()
+    ckpt_state = ckpt_model.state_dict()
+
+    for k, v in ckpt_state.items():
+        if "edge_att" in k:   # adjust if your module name is slightly different
+            if k in base_state and base_state[k].shape == v.shape:
+                base_state[k] = v
+
+    model.load_state_dict(base_state, strict=False)
+    
     model._ddp_params_and_buffers_to_ignore = [n for n, _ in model.named_parameters() if ".expert" in n]    # we manage grad synchronization of expert parameters
 
     to_esft(model, expert_config)
-    model.dummy = torch.nn.Parameter(torch.zeros(1, dtype=model.dtype))    # prevent DDP from having no trainable parameters
-    model._keys_to_ignore_on_save = ["dummy"]
+    # model.dummy = torch.nn.Parameter(torch.zeros(1, dtype=model.dtype))    # prevent DDP from having no trainable parameters
+    # model._keys_to_ignore_on_save = ["dummy"]
     expert_params = [p for n, p in model.named_parameters() if p.requires_grad and ".expert" in n]
     for layer in model.model.layers:
         if type(layer.mlp).__name__ != "DeepseekV2MoE":
@@ -261,6 +289,7 @@ def main():
     accelerator.backward = MethodType(custom_backward, accelerator)
 
     trainer.train()
+    # trainer.train(resume_from_checkpoint="/scratch/shahils/ESFT/results/checkpoints/test/eval_intent/checkpoint-700")
 
     print("Training complete")
 

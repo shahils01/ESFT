@@ -64,6 +64,10 @@ def to_esft(model, adapter_config):
     for idx, layer in enumerate(model.model.layers):
         if type(layer.mlp).__name__ != "DeepseekV2MoE":
             continue
+
+        # NEW: make edge-attention trainable
+        to_param(layer.mlp.gate_edge_att)
+        
         if adapter_config.get('shared_experts', False):
             to_param(layer.mlp.shared_experts)
         else:

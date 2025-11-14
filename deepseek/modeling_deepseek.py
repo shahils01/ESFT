@@ -459,7 +459,7 @@ class MoEGate(nn.Module):
                 f"insupportable scoring function for MoE gating: {self.scoring_func}"
             )
 
-        print("self.topk_method = ", self.topk_method)
+        # print("self.topk_method = ", self.topk_method)
         ### select top-k experts
         if self.topk_method == "greedy":
             topk_weight, topk_idx = torch.topk(
@@ -547,6 +547,51 @@ class AddAuxiliaryLoss(torch.autograd.Function):
         return grad_output, grad_loss
 
 
+class MoE_EdgeAtt(nn.Module):
+    """
+    Computes conditional importance between TopK experts based on the Expert outputs and given task
+    """
+
+    def __init__(self, config, dropout: float = 0.0):
+        super().__init__()
+        self.config = config
+        self.elu = nn.ELU()
+        self.softplus = nn.Softplus()
+        in_dim = 3*config.hidden_size
+        hidden_size = config.hidden_size
+        self.num_experts_per_tok = config.num_experts_per_tok
+
+        self.edge_att = nn.Sequential(
+            nn.Linear(in_dim, hidden_size),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, 1),
+        )
+
+    def forward(self, identity, expert_out):
+        identity = identity.squeeze().unsqueeze(1).repeat_interleave(self.num_experts_per_tok, dim=1)
+
+        # print('identity shape = ', identity.shape)
+        # print('expert_out shape = ', expert_out.shape)
+
+        anchor_out = expert_out[:,0,:].unsqueeze(1).expand(-1, expert_out.size(1), -1)
+        cat_features = torch.cat((anchor_out, expert_out), dim=-1)
+        cat_features = torch.cat((cat_features, identity), dim=-1)
+        cat_features = self.elu(cat_features)
+
+        att_vec = self.edge_att(cat_features)
+        # print('att_vec shape = ', att_vec.shape)
+
+        att_vec = self.softplus(att_vec)
+        # print('att_vec shape after softplus = ', att_vec.shape)
+
+        weighted_expert_out = att_vec * expert_out
+        # print('weighted_expert_out shape = ', weighted_expert_out.shape)
+
+        return weighted_expert_out
+
+        
+
 class DeepseekV2MoE(nn.Module):
     """
     A mixed expert module containing shared experts.
@@ -590,6 +635,7 @@ class DeepseekV2MoE(nn.Module):
                 ]
             )
         self.gate = MoEGate(config)
+        self.gate_edge_att = MoE_EdgeAtt(config)
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
             self.shared_experts = DeepseekV2MLP(
@@ -600,23 +646,27 @@ class DeepseekV2MoE(nn.Module):
         identity = hidden_states
         orig_shape = hidden_states.shape
         topk_idx, topk_weight, aux_loss = self.gate(hidden_states)
-        print('topk_idx = ', topk_idx)
-        print('topk_weight = ', topk_weight)
+        # print('topk_idx = ', topk_idx)
+        # print('topk_idx shape = ', topk_idx.shape)
+        # print('topk_weight = ', topk_weight)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        print('hidden_states shape = ', hidden_states.shape)
         flat_topk_idx = topk_idx.view(-1)
         if self.ep_size == 1:
-            print("ep_size = 1")
             hidden_states = hidden_states.repeat_interleave(self.num_experts_per_tok, dim=0)
-            print('hiddent_states ep_1 size = ', hidden_states.shape)
             y = torch.empty_like(hidden_states)
             for i, expert in enumerate(self.experts):
                 y[flat_topk_idx == i] = expert(hidden_states[flat_topk_idx == i])
         else:
-            print("ep_size > 1")
             y = self.moe_ep(hidden_states, topk_idx)
-        y = (y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)).sum(dim=1)
+
+        y = y.view(*topk_weight.shape, -1)
+        y = self.gate_edge_att(identity, y).sum(dim=1)
+
+        # y = (y * topk_weight.unsqueeze(-1)).sum(dim=1)
+        # print('y shape = ', y.shape)
+
         y = y.to(hidden_states.dtype).view(*orig_shape)
+
         if self.training:
             y = AddAuxiliaryLoss.apply(y, aux_loss)
         if self.config.n_shared_experts is not None:
@@ -1208,7 +1258,7 @@ class DeepseekV2DecoderLayer(nn.Module):
         )
 
         # config.n_routed_experts = 32
-        print('config.n_routed_experts = ', config.n_routed_experts)
+        # print('config.n_routed_experts = ', config.n_routed_experts)
 
         self.mlp = (
             DeepseekV2MoE(config)
