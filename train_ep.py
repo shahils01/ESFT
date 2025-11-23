@@ -111,7 +111,7 @@ def main():
     # model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, ep_size=ep_size, attn_implementation="flash_attention_2")
     model = DeepseekV2ForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype=torch.bfloat16, ep_size=ep_size, attn_implementation="eager", ignore_mismatched_sizes=True)
 
-    ckpt_path = "/scratch/shahils/ESFT/results/checkpoints/test/eval_intent/checkpoint-700"
+    ckpt_path = "/scratch/shahils/ESFT/results/checkpoints/test/eval_intent/checkpoint-2300"
     ckpt_model = DeepseekV2ForCausalLM.from_pretrained(
         ckpt_path,
         trust_remote_code=True,
