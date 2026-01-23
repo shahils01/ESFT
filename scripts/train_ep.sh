@@ -4,7 +4,7 @@ export TOKENIZERS_PARALLELISM=false
 exp_name="test/eval_intent"
 base_model_path="deepseek-ai/ESFT-vanilla-lite"
 # base_model_path="/scratch/shahils/ESFT/results/checkpoints/test/eval_intent/checkpoint-700/"
-WANDB_MODE=offline torchrun --nproc-per-node=8 train_ep.py \
+WANDB_MODE=offline torchrun --nproc-per-node=4 train_ep.py \
     --base_model_path=${base_model_path} \
     --expert_config=results/expert_configs/intent.json \
     --train_dataset=intent \

@@ -4,7 +4,7 @@ seq_length: 4096  # Maximum sequence length
 
 # Data settings
 per_device_batch_size: 1
-n_device: 8  # Number of devices
+n_device: 4  # Number of devices
 
 # Training settings
 optim: adamw_torch_fused
@@ -28,4 +28,4 @@ save_steps: 100  # Save model every X steps
 gradient_checkpointing: true
 gradient_accumulation_steps: 4  # Number of updates steps to accumulate before performing a backward/update pass
 max_grad_norm: 1.0  # Max gradient norm for gradient clipping
-ep_size: 8
+ep_size: 4
